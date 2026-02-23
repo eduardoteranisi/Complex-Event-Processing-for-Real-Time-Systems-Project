@@ -4,6 +4,9 @@ import (
 	"github.com/uber/h3-go/v4"
 )
 
+// Define a resolucao (precisao) da biblioteca H3
+const H3Resolution int = 9
+
 // ClusterState representa o agregador de estado em memória para cada célula H3.
 type ClusterState struct {
 	H3Index   uint64
@@ -40,7 +43,7 @@ func NewH3Map(maxEntities uint64) *H3Map {
 func (m *H3Map) AddEvent(lat, lon float64, eventType string) (isRootCause bool, state ClusterState) {
 	// 1. Biblioteca H3 entra em ação: Converte Lat/Lon para o Hexágono H3 (Resolução 9 é padrão para ruas/bairros)
 	latLng := h3.NewLatLng(lat, lon)
-	cell, _ := h3.LatLngToCell(latLng, 9)
+	cell, _ := h3.LatLngToCell(latLng, H3Resolution)
 	h3Index := uint64(cell)
 
 	// 2. Cálculo do Hash e Sondagem Linear (Open Addressing)

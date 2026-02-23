@@ -57,7 +57,6 @@ func main() {
 
 	// [Thread 2] CEP Core (O Cérebro)
 	// Executa na thread principal (bloqueante) e orquestra a passagem de dados
-	engine := core.NewCEPEngine(ringBuffer, h3Map, sedaQueues)
+	engine := core.NewCEPEngine(ringBuffer, h3Map, sedaQueues, receiver)
 	engine.Start()
 }
-
