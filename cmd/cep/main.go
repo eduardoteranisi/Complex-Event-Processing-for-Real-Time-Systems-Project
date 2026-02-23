@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"cep-module5a/internal/ingest"
+	"cep-module5/internal/ingest"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 
 	// 2. Instanciar e iniciar o UDP Receiver na porta 9999
 	receiver := ingest.NewUDPReceiver(":9999", ringBuffer)
-	
+
 	// Rodamos o receiver em uma Goroutine separada (Thread de I/O)
 	go func() {
 		if err := receiver.Start(); err != nil {

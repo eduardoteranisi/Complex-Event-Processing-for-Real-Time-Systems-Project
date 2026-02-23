@@ -3,7 +3,7 @@ package ingest
 import (
 	"sync/atomic"
 
-	"cep-module5a/internal/domain"
+	"cep-module5/internal/domain"
 )
 
 // RingBuffer implementa uma fila circular pre-alocada e lock-free para o padrão SPSC.
@@ -25,7 +25,7 @@ func NewRingBuffer(capacity uint64) *RingBuffer {
 	}
 }
 
-// Push insere um novo evento no buffer. 
+// Push insere um novo evento no buffer.
 // Operação Wait-Free executada pela Thread de Ingestão (UDP).
 func (rb *RingBuffer) Push(event domain.TelemetryEvent) bool {
 	// Lê os ponteiros atomicamente direto do cache da CPU
@@ -40,7 +40,7 @@ func (rb *RingBuffer) Push(event domain.TelemetryEvent) bool {
 
 	// Insere o dado no índice circular
 	rb.data[h%rb.capacity] = event
-	
+
 	// Incrementa a head atomicamente (Memory Barrier - libera a leitura para o Core)
 	atomic.AddUint64(&rb.head, 1)
 	return true
@@ -59,7 +59,7 @@ func (rb *RingBuffer) Pop() (domain.TelemetryEvent, bool) {
 
 	// Resgata o dado
 	event := rb.data[t%rb.capacity]
-	
+
 	// Incrementa a tail atomicamente (libera o espaço para o UDP Receiver)
 	atomic.AddUint64(&rb.tail, 1)
 	return event, true

@@ -1,0 +1,18 @@
+# Binários compilados
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Dependências (raramente enviadas ao Git em Go)
+vendor/
+
+# Arquivos de IDE (VS Code, JetBrains, etc)
+.vscode/
+.idea/
+
+# Logs e arquivos temporários
+*.log
+tmp/

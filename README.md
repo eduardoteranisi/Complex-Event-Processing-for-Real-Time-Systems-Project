@@ -1,7 +1,7 @@
 ## Estrutura do Projeto
 
 ```text
-cep-module5a/
+cep-module5/
 ├── cmd/
 │   └── cep/
 │       └── main.go             # Ponto de entrada: faz o "wiring" (liga as peças), pré-aloca as memórias estáticas e inicia as 4 Goroutines.

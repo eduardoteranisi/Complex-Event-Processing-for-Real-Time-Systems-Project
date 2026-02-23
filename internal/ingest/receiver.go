@@ -6,15 +6,15 @@ import (
 	"net"
 	"sync/atomic"
 
-	"cep-module5a/internal/domain"
+	"cep-module5/internal/domain"
 )
 
 // UDPReceiver é responsável por escutar a rede e alimentar o RingBuffer.
 type UDPReceiver struct {
-	address       string
-	ringBuffer    *RingBuffer
-	packetsRecv   uint64 // Contador atómico para observabilidade
-	packetsDrop   uint64 // Contador atómico de erros (Silent Drop)
+	address     string
+	ringBuffer  *RingBuffer
+	packetsRecv uint64 // Contador atómico para observabilidade
+	packetsDrop uint64 // Contador atómico de erros (Silent Drop)
 }
 
 // NewUDPReceiver cria uma nova instância do recetor UDP.
@@ -42,11 +42,11 @@ func (r *UDPReceiver) Start() error {
 
 	// =========================================================================
 	// ESTRATÉGIA ZERO-ALLOCATION (HOT PATH)
-	// O buffer de leitura é pré-alocado FORA do loop. 
+	// O buffer de leitura é pré-alocado FORA do loop.
 	// 1024 bytes é mais do que suficiente para o payload JSON de 250 bytes.
 	// =========================================================================
 	readBuffer := make([]byte, 1024)
-	
+
 	// Variável de evento reutilizada para evitar alocações dinâmicas
 	var event domain.TelemetryEvent
 
@@ -78,4 +78,5 @@ func (r *UDPReceiver) Start() error {
 
 // GetMetrics devolve as métricas atuais para o relatório de observabilidade (Requisito 2.9.4)
 func (r *UDPReceiver) GetMetrics() (received uint64, dropped uint64) {
-	return atomic.LoadUint64(&r
+	return atomic.LoadUint64(&r.packetsRecv), atomic.LoadUint64(&r.packetsDrop)
+}
