@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"log"
+	"time"
 
 	"cep-module5/internal/core"
 	"cep-module5/internal/ingest"
@@ -33,8 +35,30 @@ func main() {
 		Notification: notificationQueue,
 	}
 
-	log.Println("[SISTEMA] Memória estática alocada. Inicializando Threads...")
+	log.Println("[SISTEMA] Memória estática alocada. Fazendo conexao com o banco Incident Log...")
 
+	// ==========================================
+	// 1.5. CONEXÃO COM O BANCO E RECUPERAÇÃO DE ESTADO
+	// ==========================================
+	connStr := "postgres://postgres:12345@localhost:5432/incident_db?sslmode=disable"
+	db, err := sql.Open("postgres", connStr)
+	if err != nil || db.Ping() != nil {
+		log.Fatalf("[SISTEMA] ❌ Erro fatal: Banco de dados inatingível.")
+	}
+	defer db.Close()
+	log.Println("[SISTEMA] ✅ Conectado ao Incident Log. Inicializando threads...")
+
+	// Instancia o mecanismo de recuperação
+	recovery := output.NewDBRecovery(db)
+
+	// Define o limite de tempo: Recuperar tudo da última 1 hora
+	umaHoraAtras := time.Now().Add(-1 * time.Hour).UnixMilli()
+	historico := recovery.RecoverRecentIncidents(umaHoraAtras)
+
+	// Injeta o histórico direto na fila de notificação para re-sincronizar o Módulo 3
+	for _, eventoPassado := range historico {
+		notificationQueue.Push(eventoPassado)
+	}
 	// ==========================================
 	// 2. INICIALIZAÇÃO DOS 4 ESTÁGIOS (Goroutines)
 	// ==========================================
@@ -48,7 +72,7 @@ func main() {
 	}()
 
 	// [Thread 3] DB Writer (Consome a fila de persistência)
-	dbWriter := output.NewDBWriter(persistenceQueue)
+	dbWriter := output.NewDBWriter(persistenceQueue, db)
 	go dbWriter.Start()
 
 	// [Thread 4] UDP Broadcaster (Consome a fila de notificação e envia para a porta 8888)
