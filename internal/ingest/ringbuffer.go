@@ -4,24 +4,27 @@ import (
 	"sync/atomic"
 
 	"cep-module5/internal/domain"
+	"cep-module5/internal/metrics"
 )
 
 // RingBuffer implementa uma fila circular pre-alocada e lock-free para o padrão SPSC.
 type RingBuffer struct {
-	data     []domain.TelemetryEvent
-	capacity uint64
-	head     uint64 // Ponteiro de escrita (Produtor / UDP Receiver)
-	tail     uint64 // Ponteiro de leitura (Consumidor / CEP Core)
+	data      []domain.TelemetryEvent
+	capacity  uint64
+	head      uint64 // Ponteiro de escrita (Produtor / UDP Receiver)
+	tail      uint64 // Ponteiro de leitura (Consumidor / CEP Core)
+	queueName string
 }
 
 // NewRingBuffer realiza a alocação estática na inicialização (Heap Pre-allocation).
 // ATENÇÃO: Esta função só pode ser chamada UMA VEZ no main.go.
-func NewRingBuffer(capacity uint64) *RingBuffer {
+func NewRingBuffer(name string, capacity uint64) *RingBuffer {
 	return &RingBuffer{
-		data:     make([]domain.TelemetryEvent, capacity), // Alocação contígua e estática
-		capacity: capacity,
-		head:     0,
-		tail:     0,
+		data:      make([]domain.TelemetryEvent, capacity), // Alocação contígua e estática
+		capacity:  capacity,
+		head:      0,
+		tail:      0,
+		queueName: name,
 	}
 }
 
@@ -43,6 +46,8 @@ func (rb *RingBuffer) Push(event domain.TelemetryEvent) bool {
 
 	// Incrementa a head atomicamente (Memory Barrier - libera a leitura para o Core)
 	atomic.AddUint64(&rb.head, 1)
+
+	metrics.TamanhoFilas.WithLabelValues(rb.queueName).Inc()
 	return true
 }
 
@@ -62,5 +67,7 @@ func (rb *RingBuffer) Pop() (domain.TelemetryEvent, bool) {
 
 	// Incrementa a tail atomicamente (libera o espaço para o UDP Receiver)
 	atomic.AddUint64(&rb.tail, 1)
+
+	metrics.TamanhoFilas.WithLabelValues(rb.queueName).Dec()
 	return event, true
 }

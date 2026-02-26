@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// TelemetryEvent espelha a entrada do Módulo 5a
 type TelemetryEvent struct {
 	EventID   string     `json:"event_id"`
 	EventType string     `json:"event_type"`
@@ -19,7 +18,7 @@ type TelemetryEvent struct {
 }
 
 func main() {
-	log.Println("[Módulo 5b] Iniciando Simulador de Tempestade de Alarmes...")
+	log.Println("[Módulo 5b] Iniciando Simulador Multi-Regiões...")
 
 	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:9999")
 	if err != nil {
@@ -32,53 +31,62 @@ func main() {
 	}
 	defer conn.Close()
 
-	// Coordenadas alvo para forçar o agrupamento (Causa Raiz)
-	targetLat, targetLon := -18.9100, -48.2700
+	// Simulando 4 regiões distintas da cidade afetadas pela mesma tempestade
+	targetZones := [][2]float64{
+		{-18.9100, -48.2700}, // Centro
+		{-18.9400, -48.2900}, // Zona Sul
+		{-18.8800, -48.2500}, // Zona Norte
+		{-18.9000, -48.2200}, // Zona Leste
+	}
 
-	// Dispara a carga em rajadas de 1 segundo (5.000 pacotes/segundo = 300.000/minuto)
+	// 1. Carga de Fundo (Background Noise): 5.000 pacotes/s espalhados pela cidade
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
 		for range ticker.C {
-			// Executa 5.000 envios de rede o mais rápido que a CPU aguentar neste segundo
 			for i := 0; i < 5000; i++ {
-				// 5% de chance de enviar um pacote corrompido para testar o Silent Drop
 				if rand.Intn(100) < 5 {
 					conn.Write([]byte(`{"event_id": "corrompido", json_quebrado`))
 					continue
 				}
 
-				// Gera pacote normal espalhado aleatoriamente em torno da coordenada alvo
+				// Sorteia uma das 4 zonas para gerar um evento de telemetria normal (sem causar alarme)
+				zone := targetZones[rand.Intn(len(targetZones))]
+
 				event := TelemetryEvent{
 					EventID:   uuid.New().String(),
 					EventType: "VOLTAGE_DROP",
 					Timestamp: time.Now().UnixMilli(),
-					Local:     [2]float64{targetLat + (rand.Float64() - 0.5), targetLon + (rand.Float64() - 0.5)},
+					// Adiciona um ruído (jitter) geográfico amplo para não agrupar no mesmo hexágono facilmente
+					Local: [2]float64{zone[0] + (rand.Float64() - 0.5), zone[1] + (rand.Float64() - 0.5)},
 				}
 
 				payload, _ := json.Marshal(event)
-				conn.Write(payload) // Chamada de sistema (Syscall) UDP
+				conn.Write(payload)
 			}
 		}
 	}()
 
-	// Rotina maliciosa: A cada 10 segundos, injeta 35 pacotes simultâneos na MESMA coordenada
-	// Isso garante que o CEP Core (Módulo 5a) dispare o alerta de Causa Raiz
+	// 2. Anomalia Coordenada Multi-Regiões
+	// A cada 10 segundos, injeta 35 pacotes cravados em TODAS as 4 zonas ao MESMO TEMPO
 	stormTicker := time.NewTicker(10 * time.Second)
 	defer stormTicker.Stop()
 
 	for range stormTicker.C {
-		log.Println("[Módulo 5b] ⚡ Injetando Anomalia Coordenada (35 pacotes no mesmo hexágono)...")
-		for i := 0; i < 35; i++ {
-			event := TelemetryEvent{
-				EventID:   uuid.New().String(),
-				EventType: "CRITICAL_DROP",
-				Timestamp: time.Now().UnixMilli(),
-				Local:     [2]float64{targetLat, targetLon}, // Mesma coordenada exata!
+		log.Println("[Módulo 5b] ⚡ Tempestade severa! Injetando anomalias simultâneas em 4 zonas...")
+
+		for _, zone := range targetZones {
+			for i := 0; i < 35; i++ {
+				event := TelemetryEvent{
+					EventID:   uuid.New().String(),
+					EventType: "CRITICAL_DROP",
+					Timestamp: time.Now().UnixMilli(),
+					Local:     [2]float64{zone[0], zone[1]}, // Coordenada cravada da zona atual
+				}
+				payload, _ := json.Marshal(event)
+				conn.Write(payload)
 			}
-			payload, _ := json.Marshal(event)
-			conn.Write(payload)
 		}
 	}
 }

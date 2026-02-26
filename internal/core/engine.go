@@ -8,6 +8,7 @@ import (
 
 	"cep-module5/internal/domain"
 	"cep-module5/internal/ingest"
+	"cep-module5/internal/metrics"
 )
 
 // OutputQueues define o contrato para as filas de saída.
@@ -51,6 +52,7 @@ func (e *CEPEngine) Start() {
 		select {
 		case <-windowTicker.C:
 			// 1. Coleta e cálculo das métricas
+			startProcessing := time.Now()
 			windowProcessTime := time.Since(windowStartTime)
 			currentRecv, currentDrop := e.receiver.GetMetrics()
 
@@ -67,6 +69,9 @@ func (e *CEPEngine) Start() {
 
 			// 3. Reset de estado para a próxima janela em O(N ativos)
 			e.h3Map.ResetWindow()
+
+			duration := time.Since(startProcessing).Seconds()
+			metrics.LatenciaProcessamentoJanela.Observe(duration)
 
 			// 4. Prepara os contadores para o próximo ciclo
 			lastRecv = currentRecv
@@ -106,4 +111,3 @@ func (e *CEPEngine) Start() {
 		}
 	}
 }
-

@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"cep-module5/internal/domain"
+	"cep-module5/internal/metrics"
 )
 
 // UDPReceiver é responsável por escutar a rede e alimentar o RingBuffer.
@@ -60,6 +61,8 @@ func (r *UDPReceiver) Start() error {
 		}
 
 		atomic.AddUint64(&r.packetsRecv, 1)
+
+		metrics.EventosRecebidosTotal.Inc()
 
 		// 2. Desserialização (Parsing do JSON)
 		err = json.Unmarshal(readBuffer[:n], &event)

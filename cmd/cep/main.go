@@ -3,7 +3,10 @@ package main
 import (
 	"database/sql"
 	"log"
+	"net/http"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"cep-module5/internal/core"
 	"cep-module5/internal/ingest"
@@ -12,14 +15,23 @@ import (
 
 func main() {
 	log.Println("[SISTEMA] Iniciando Módulo 5a (Pipeline SEDA Completo: 4 Estágios)...")
-
+	// ==========================================
+	// 0. SERVIDOR DE MÉTRICAS (PROMETHEUS)
+	// ==========================================
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Println("[Monitoramento] 📊 Prometheus escutando na porta :2112 (/metrics)")
+		if err := http.ListenAndServe(":2112", nil); err != nil {
+			log.Fatalf("Erro no servidor de métricas: %v", err)
+		}
+	}()
 	// ==========================================
 	// 1. PRÉ-ALOCAÇÃO DE MEMÓRIA (Zero-Allocation)
 	// ==========================================
 
 	// Estágio 1: Buffer de Ingestão (Equivalente aos 150 MB)
 	ingestBufferSize := uint64(100000)
-	ringBuffer := ingest.NewRingBuffer(ingestBufferSize)
+	ringBuffer := ingest.NewRingBuffer("ingestion", ingestBufferSize)
 
 	// Estágio 2: Tabela Hash H3 (Equivalente aos 128 MB)
 	maxEntities := uint64(350000)
@@ -27,8 +39,8 @@ func main() {
 
 	// Estágios 3 e 4: Filas de Saída (Equivalente aos 32 MB particionados)
 	// Como o struct ComplexEvent é maior, alocamos tamanhos proporcionais aos 24MB e 8MB
-	persistenceQueue := output.NewComplexEventRingBuffer(50000)  // Maior tolerância a falhas do DB
-	notificationQueue := output.NewComplexEventRingBuffer(15000) // Prioridade de rede, fila menor
+	persistenceQueue := output.NewComplexEventRingBuffer("persistence", 50000)   // Maior tolerância a falhas do DB
+	notificationQueue := output.NewComplexEventRingBuffer("notification", 15000) // Prioridade de rede, fila menor
 
 	sedaQueues := &output.SEDAQueues{
 		Persistence:  persistenceQueue,

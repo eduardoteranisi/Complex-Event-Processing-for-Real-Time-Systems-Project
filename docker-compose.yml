@@ -12,3 +12,25 @@ services:
     volumes:
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
+    
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cep-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Truque essencial para funcionar no Linux/Ubuntu!
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cep-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Senha padrão simples para testes
+    depends_on:
+      - prometheus
+    restart: unless-stopped

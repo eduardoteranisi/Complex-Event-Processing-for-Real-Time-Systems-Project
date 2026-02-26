@@ -1,0 +1,9 @@
+# monitoring/prometheus.yml
+global:
+  scrape_interval: 5s # Vai sugar os dados do Go a cada 5 segundos (ótimo para ver o caos em tempo real)
+
+scrape_configs:
+  - job_name: 'cep-engine'
+    static_configs:
+      # host.docker.internal aponta para o seu Ubuntu, onde o 'go run' está executando
+      - targets: ['host.docker.internal:2112']

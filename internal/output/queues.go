@@ -4,20 +4,23 @@ import (
 	"sync/atomic"
 
 	"cep-module5/internal/domain"
+	"cep-module5/internal/metrics"
 )
 
 // ComplexEventRingBuffer é a versão Lock-Free para as filas de saída.
 type ComplexEventRingBuffer struct {
-	data     []domain.ComplexEvent
-	capacity uint64
-	head     uint64
-	tail     uint64
+	data                   []domain.ComplexEvent
+	capacity               uint64
+	head                   uint64
+	tail                   uint64
+	complexEventBufferName string
 }
 
-func NewComplexEventRingBuffer(capacity uint64) *ComplexEventRingBuffer {
+func NewComplexEventRingBuffer(name string, capacity uint64) *ComplexEventRingBuffer {
 	return &ComplexEventRingBuffer{
-		data:     make([]domain.ComplexEvent, capacity),
-		capacity: capacity,
+		data:                   make([]domain.ComplexEvent, capacity),
+		capacity:               capacity,
+		complexEventBufferName: name,
 	}
 }
 
@@ -29,6 +32,8 @@ func (rb *ComplexEventRingBuffer) Push(event domain.ComplexEvent) bool {
 	}
 	rb.data[h%rb.capacity] = event
 	atomic.AddUint64(&rb.head, 1)
+
+	metrics.TamanhoFilas.WithLabelValues(rb.complexEventBufferName).Inc()
 	return true
 }
 
@@ -40,6 +45,8 @@ func (rb *ComplexEventRingBuffer) Pop() (domain.ComplexEvent, bool) {
 	}
 	event := rb.data[t%rb.capacity]
 	atomic.AddUint64(&rb.tail, 1)
+
+	metrics.TamanhoFilas.WithLabelValues(rb.complexEventBufferName).Dec()
 	return event, true
 }
 
