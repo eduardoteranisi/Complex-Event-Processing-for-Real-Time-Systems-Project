@@ -2,10 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"cep-module5/internal/core"
@@ -14,7 +17,22 @@ import (
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Aviso: Arquivo .env não encontrado. Tentando ler do sistema...")
+	}
+
+	udpTarget := os.Getenv("MOD3_UDP_TARGET")
+
+	if udpTarget == "" {
+		log.Println("⚠️ Aviso: MOD3_UDP_TARGET vazio. Usando 127.0.0.1:8888 por padrão.")
+		udpTarget = "127.0.0.1:8888"
+	} else {
+		log.Printf("📡 Alvo UDP configurado para: %s\n", udpTarget)
+	}
+
 	log.Println("[SISTEMA] Iniciando Módulo 5a (Pipeline SEDA Completo: 4 Estágios)...")
+
 	// ==========================================
 	// 0. SERVIDOR DE MÉTRICAS (PROMETHEUS)
 	// ==========================================
@@ -52,7 +70,13 @@ func main() {
 	// ==========================================
 	// 1.5. CONEXÃO COM O BANCO E RECUPERAÇÃO DE ESTADO
 	// ==========================================
-	connStr := "postgres://postgres:12345@localhost:5432/incident_db?sslmode=disable"
+	dbUser := os.Getenv("DB_USER")
+	dbPass := os.Getenv("DB_PASS")
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+	dbName := os.Getenv("DB_NAME")
+
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", dbUser, dbPass, dbHost, dbPort, dbName)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil || db.Ping() != nil {
 		log.Fatalf("[SISTEMA] ❌ Erro fatal: Banco de dados inatingível.")
@@ -88,7 +112,7 @@ func main() {
 	go dbWriter.Start()
 
 	// [Thread 4] UDP Broadcaster (Consome a fila de notificação e envia para a porta 8888)
-	broadcaster := output.NewUDPBroadcaster(notificationQueue, "127.0.0.1:8888")
+	broadcaster := output.NewUDPBroadcaster(notificationQueue, udpTarget)
 	go broadcaster.Start()
 
 	// [Thread 2] CEP Core (O Cérebro)

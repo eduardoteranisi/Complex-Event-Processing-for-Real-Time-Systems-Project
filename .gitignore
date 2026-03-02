@@ -16,3 +16,6 @@ vendor/
 # Logs e arquivos temporários
 *.log
 tmp/
+
+# Variáveis de ambiente
+.env
