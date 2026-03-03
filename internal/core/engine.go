@@ -4,79 +4,87 @@ import (
 	"log"
 	"time"
 
-	"github.com/google/uuid"
-
 	"cep-module5/internal/domain"
 	"cep-module5/internal/ingest"
-	"cep-module5/internal/metrics"
+	"cep-module5/internal/workers"
 )
 
-// OutputQueues define o contrato para as filas de saída.
 type OutputQueues interface {
 	PushPersistence(event domain.ComplexEvent) bool
 	PushNotification(event domain.ComplexEvent) bool
 }
 
-// CEPEngine é o orquestrador do Estágio 2.
 type CEPEngine struct {
 	inputBuffer *ingest.RingBuffer
-	h3Map       *H3Map
 	outputs     OutputQueues
-	receiver    *ingest.UDPReceiver // Injetado para coletar as métricas de Observabilidade
+	receiver    *ingest.UDPReceiver
+	maxEntities uint64
 }
 
-// NewCEPEngine constrói o motor recebendo todas as dependências SEDA.
-func NewCEPEngine(input *ingest.RingBuffer, h3Map *H3Map, outputs OutputQueues, receiver *ingest.UDPReceiver) *CEPEngine {
+func NewCEPEngine(input *ingest.RingBuffer, outputs OutputQueues, receiver *ingest.UDPReceiver, maxEntities uint64) *CEPEngine {
 	return &CEPEngine{
 		inputBuffer: input,
-		h3Map:       h3Map,
 		outputs:     outputs,
 		receiver:    receiver,
+		maxEntities: maxEntities,
 	}
 }
 
-// Start inicia o loop principal da Thread Core.
 func (e *CEPEngine) Start() {
-	log.Println("[CEP Core] Iniciando motor de correlação temporal/espacial...")
+	log.Println("[CEP Router] Iniciando o Roteador de Eventos (Demultiplexer)...")
 
-	windowDuration := 60 * time.Second
-	windowTicker := time.NewTicker(windowDuration)
-	defer windowTicker.Stop()
+	// ==========================================
+	// 1. INICIALIZAÇÃO DAS ESTEIRAS E WORKERS
+	// ==========================================
 
-	// Variáveis de controle de métricas da janela atual
-	var incidentsThisWindow int
+	genericChan := make(chan domain.TelemetryEvent, 1000)
+	criticalDropChan := make(chan domain.TelemetryEvent, 1000)
+	overvoltageChan := make(chan domain.TelemetryEvent, 1000)
+	undervoltageChan := make(chan domain.TelemetryEvent, 1000)
+
+	genericWorker := workers.NewGenericWorker(e.outputs, 5)
+	go genericWorker.Start(genericChan)
+
+	criticalDropWorker := workers.NewCriticalDropWorker(e.outputs, e.maxEntities)
+	go criticalDropWorker.Start(criticalDropChan)
+
+	overvoltageWorker := workers.NewUndervoltageWorker(e.outputs, 5)
+	go overvoltageWorker.Start(overvoltageChan)
+
+	undervoltageWorker := workers.NewUndervoltageWorker(e.outputs, e.maxEntities)
+	go undervoltageWorker.Start(undervoltageChan)
+
+	// ==========================================
+	// 2. CONFIGURAÇÃO DA OBSERVABILIDADE DE INGESTÃO
+	// ==========================================
+
+	reportDuration := 60 * time.Second
+	reportTicker := time.NewTicker(reportDuration)
+	defer reportTicker.Stop()
+
 	var lastRecv, lastDrop uint64
 	windowStartTime := time.Now()
 
+	// ==========================================
+	// 3. LOOP PRINCIPAL (ALTA VAZÃO)
+	// ==========================================
 	for {
 		select {
-		case <-windowTicker.C:
-			// 1. Coleta e cálculo das métricas
-			startProcessing := time.Now()
+		case <-reportTicker.C:
 			windowProcessTime := time.Since(windowStartTime)
 			currentRecv, currentDrop := e.receiver.GetMetrics()
 
 			recvThisWindow := currentRecv - lastRecv
 			dropThisWindow := currentDrop - lastDrop
 
-			// 2. Emissão do Relatório de Observabilidade (Requisito 2.9.4)
-			log.Printf("\n=== RELATÓRIO SINTÉTICO DA JANELA (60s) ===")
-			log.Printf("Pacotes Recebidos        : %d", recvThisWindow)
-			log.Printf("Pacotes Descartados      : %d", dropThisWindow)
-			log.Printf("Incidentes Identificados : %d", incidentsThisWindow)
-			log.Printf("Tempo Total da Janela    : %v", windowProcessTime)
-			log.Printf("===========================================\n")
+			log.Printf("\n=== RELATÓRIO SINTÉTICO DE INGESTÃO (60s) ===")
+			log.Printf("Pacotes Recebidos   : %d", recvThisWindow)
+			log.Printf("Pacotes Descartados : %d", dropThisWindow)
+			log.Printf("Uptime da Janela    : %v", windowProcessTime)
+			log.Printf("=============================================\n")
 
-			// 3. Reset de estado para a próxima janela em O(N ativos)
-			e.h3Map.ResetWindow()
-
-			duration := time.Since(startProcessing).Seconds()
-			metrics.LatenciaProcessamentoJanela.Observe(duration)
-
-			// 4. Prepara os contadores para o próximo ciclo
 			lastRecv = currentRecv
 			lastDrop = currentDrop
-			incidentsThisWindow = 0
 			windowStartTime = time.Now()
 
 		default:
@@ -86,27 +94,19 @@ func (e *CEPEngine) Start() {
 				continue
 			}
 
-			isRootCause, cluster := e.h3Map.AddEvent(event.Local[0], event.Local[1], event.EventType)
+			switch event.EventType {
 
-			if isRootCause {
-				incidentsThisWindow++ // Incrementa a métrica do relatório
+			case "CRITICAL_DROP":
+				criticalDropChan <- event
 
-				complexEvent := domain.ComplexEvent{
-					CriticalEventID:   uuid.New().String(),
-					CriticalEventType: cluster.EventType,
-					Local:             [2]float64{cluster.FirstLat, cluster.FirstLon},
-					Timestamp:         time.Now().UnixMilli(),
-					ClusterSize:       cluster.Count,
-				}
+			case "OVERVOLTAGE":
+				overvoltageChan <- event
 
-				// Log customizado legível para o operador no console local
-				log.Printf("Agrupamento anormal de %d quedas de energia na coordenada [%.4f, %.4f] neste minuto",
-					complexEvent.ClusterSize, complexEvent.Local[0], complexEvent.Local[1])
+			case "UNDERVOLTAGE":
+				undervoltageChan <- event
 
-				if e.outputs != nil {
-					e.outputs.PushPersistence(complexEvent)
-					e.outputs.PushNotification(complexEvent)
-				}
+				//default:
+				//	genericChan <- event
 			}
 		}
 	}

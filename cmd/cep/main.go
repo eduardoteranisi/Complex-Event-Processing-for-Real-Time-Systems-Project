@@ -53,12 +53,10 @@ func main() {
 
 	// Estágio 2: Tabela Hash H3 (Equivalente aos 128 MB)
 	maxEntities := uint64(350000)
-	h3Map := core.NewH3Map(maxEntities)
 
 	// Estágios 3 e 4: Filas de Saída (Equivalente aos 32 MB particionados)
-	// Como o struct ComplexEvent é maior, alocamos tamanhos proporcionais aos 24MB e 8MB
-	persistenceQueue := output.NewComplexEventRingBuffer("persistence", 50000)   // Maior tolerância a falhas do DB
-	notificationQueue := output.NewComplexEventRingBuffer("notification", 15000) // Prioridade de rede, fila menor
+	persistenceQueue := output.NewComplexEventRingBuffer("persistence", 50000)
+	notificationQueue := output.NewComplexEventRingBuffer("notification", 15000)
 
 	sedaQueues := &output.SEDAQueues{
 		Persistence:  persistenceQueue,
@@ -84,14 +82,11 @@ func main() {
 	defer db.Close()
 	log.Println("[SISTEMA] ✅ Conectado ao Incident Log. Inicializando threads...")
 
-	// Instancia o mecanismo de recuperação
 	recovery := output.NewDBRecovery(db)
 
-	// Define o limite de tempo: Recuperar tudo da última 1 hora
 	umaHoraAtras := time.Now().Add(-1 * time.Hour).UnixMilli()
 	historico := recovery.RecoverRecentIncidents(umaHoraAtras)
 
-	// Injeta o histórico direto na fila de notificação para re-sincronizar o Módulo 3
 	for _, eventoPassado := range historico {
 		notificationQueue.Push(eventoPassado)
 	}
@@ -99,7 +94,7 @@ func main() {
 	// 2. INICIALIZAÇÃO DOS 4 ESTÁGIOS (Goroutines)
 	// ==========================================
 
-	// [Thread 1] UDP Receiver (Ingestão bruta na porta 9999)
+	// [Thread 1] UDP Receiver
 	receiver := ingest.NewUDPReceiver(":9999", ringBuffer)
 	go func() {
 		if err := receiver.Start(); err != nil {
@@ -107,16 +102,15 @@ func main() {
 		}
 	}()
 
-	// [Thread 3] DB Writer (Consome a fila de persistência)
+	// [Thread 3] DB Writer
 	dbWriter := output.NewDBWriter(persistenceQueue, db)
 	go dbWriter.Start()
 
-	// [Thread 4] UDP Broadcaster (Consome a fila de notificação e envia para a porta 8888)
+	// [Thread 4] UDP Broadcaster
 	broadcaster := output.NewUDPBroadcaster(notificationQueue, udpTarget)
 	go broadcaster.Start()
 
-	// [Thread 2] CEP Core (O Cérebro)
-	// Executa na thread principal (bloqueante) e orquestra a passagem de dados
-	engine := core.NewCEPEngine(ringBuffer, h3Map, sedaQueues, receiver)
+	// CEP Core (O Cérebro)
+	engine := core.NewCEPEngine(ringBuffer, sedaQueues, receiver, maxEntities)
 	engine.Start()
 }
