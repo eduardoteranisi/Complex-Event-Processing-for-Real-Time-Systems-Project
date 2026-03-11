@@ -94,6 +94,9 @@ func (e *CEPEngine) Start() {
 				continue
 			}
 
+			// Caso de saturacao do buffer circular: motor esta super lento e demora 10 milissegundos para processar
+			//time.Sleep(10 * time.Millisecond)
+
 			switch event.EventType {
 
 			case "CRITICAL_DROP":
