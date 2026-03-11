@@ -84,12 +84,14 @@ func main() {
 			triggerStorm(conn, targetZones, "OVERVOLTAGE", 40)
 		case "5":
 			triggerStorm(conn, targetZones, "UNDERVOLTAGE", 50)
+
 		case "6":
 			fmt.Println("\nINICIANDO CAOS TOTAL: Injetando múltiplas anomalias simultâneas...")
 
 			triggerStorm(conn, targetZones, "CRITICAL_DROP", 35)
 			triggerStorm(conn, targetZones, "OVERVOLTAGE", 40)
 			triggerStorm(conn, targetZones, "UNDERVOLTAGE", 50)
+
 		case "0":
 			fmt.Println("Encerrando simulador...")
 			os.Exit(0)
@@ -161,4 +163,3 @@ func printMenu() {
 	fmt.Println("[ 0 ] - Sair")
 	fmt.Print("Escolha uma opção: ")
 }
-
