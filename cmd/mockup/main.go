@@ -120,33 +120,55 @@ func triggerStorm(conn *net.UDPConn, zones [][2]float64, eventType string, count
 }
 
 func startBackgroundNoise(conn *net.UDPConn, zones [][2]float64) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
 	basicEvents := []string{"VOLTAGE_DROP", "NOISE", "PING"}
 
-	for range ticker.C {
-		currentRate := int(atomic.LoadInt64(&bgRate))
-		currentErrRate := int(atomic.LoadInt64(&errorRate))
+	for {
+		currentRate := atomic.LoadInt64(&bgRate)
 
-		for i := 0; i < currentRate; i++ {
-			if rand.Intn(100) < currentErrRate {
-				conn.Write([]byte(`{"event_id": "corrompido", json_quebrado`))
-				continue
+		if currentRate <= 0 {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// IMPLEMENTAÇÃO DO MICRO-BATCHING
+		// Define 10 "pulsos" por segundo (a cada 100ms).
+		ticksPerSecond := int64(10)
+		interval := time.Millisecond * 100
+		ticker := time.NewTicker(interval)
+
+		// Calcula o tamanho do lote (ex: 5000 / 10 = 500 pacotes por pulso)
+		batchSize := currentRate / ticksPerSecond
+		if batchSize < 1 {
+			batchSize = 1
+		}
+
+		for range ticker.C {
+			if atomic.LoadInt64(&bgRate) != currentRate {
+				ticker.Stop()
+				break
 			}
 
-			zone := zones[rand.Intn(len(zones))]
-			eventType := basicEvents[rand.Intn(len(basicEvents))]
+			currentErrRate := int(atomic.LoadInt64(&errorRate))
 
-			event := TelemetryEvent{
-				EventID:   uuid.New().String(),
-				EventType: eventType,
-				Timestamp: time.Now().UnixMilli(),
-				Local:     [2]float64{zone[0] + (rand.Float64() - 0.5), zone[1] + (rand.Float64() - 0.5)},
+			for i := int64(0); i < batchSize; i++ {
+				if rand.Intn(100) < currentErrRate {
+					conn.Write([]byte(`{"event_id": "corrompido", json_quebrado`))
+					continue
+				}
+
+				zone := zones[rand.Intn(len(zones))]
+				eventType := basicEvents[rand.Intn(len(basicEvents))]
+
+				event := TelemetryEvent{
+					EventID:   uuid.New().String(),
+					EventType: eventType,
+					Timestamp: time.Now().UnixMilli(),
+					Local:     [2]float64{zone[0] + (rand.Float64() - 0.5), zone[1] + (rand.Float64() - 0.5)},
+				}
+
+				payload, _ := json.Marshal(event)
+				conn.Write(payload)
 			}
-
-			payload, _ := json.Marshal(event)
-			conn.Write(payload)
 		}
 	}
 }
