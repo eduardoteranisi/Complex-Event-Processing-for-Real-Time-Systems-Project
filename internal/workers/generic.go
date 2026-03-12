@@ -35,7 +35,7 @@ func (w *GenericWorker) Start(inChan <-chan domain.TelemetryEvent) {
 		select {
 		case event := <-inChan:
 			latLng := h3.NewLatLng(event.Local[0], event.Local[1])
-			cell, err := h3.LatLngToCell(latLng, H3Resolution)
+			cell, err := h3.LatLngToCell(latLng, GenericWorkerH3Resolution)
 
 			var h3Index string
 			if err != nil {

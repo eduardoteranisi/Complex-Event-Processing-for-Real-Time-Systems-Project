@@ -6,6 +6,7 @@ import (
 
 // Define a resolucao (precisao) da biblioteca H3
 const H3Resolution int = 9
+const GenericWorkerH3Resolution int = 7
 
 type ClusterState struct {
 	H3Index   uint64

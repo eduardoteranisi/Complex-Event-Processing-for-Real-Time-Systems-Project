@@ -47,6 +47,7 @@ func main() {
 		{-18.9400, -48.2900}, // Sul
 		{-18.8800, -48.2500}, // Norte
 		{-18.9000, -48.2200}, // Leste
+		{-18.9200, -48.3200}, // Oeste
 	}
 
 	go startBackgroundNoise(conn, targetZones)
@@ -105,17 +106,24 @@ func triggerStorm(conn *net.UDPConn, zones [][2]float64, eventType string, count
 	fmt.Printf("\n⚡ DISPARANDO TEMPESTADE: %s (%d eventos por zona)\n", eventType, count)
 
 	for _, zone := range zones {
+		stormLat := zone[0] + ((rand.Float64() - 0.5) * 0.03)
+		stormLon := zone[1] + ((rand.Float64() - 0.5) * 0.03)
+
 		for i := 0; i < count; i++ {
 			event := TelemetryEvent{
 				EventID:   uuid.New().String(),
 				EventType: eventType,
 				Timestamp: time.Now().UnixMilli(),
-				Local:     [2]float64{zone[0], zone[1]}, // Cravado na zona para clusterizar
+				Local: [2]float64{
+					stormLat + ((rand.Float64() - 0.5) * 0.002),
+					stormLon + ((rand.Float64() - 0.5) * 0.002),
+				},
 			}
 			payload, _ := json.Marshal(event)
 			conn.Write(payload)
 		}
 	}
+
 	fmt.Println("✅ Tempestade enviada com sucesso!")
 }
 
@@ -163,7 +171,7 @@ func startBackgroundNoise(conn *net.UDPConn, zones [][2]float64) {
 					EventID:   uuid.New().String(),
 					EventType: eventType,
 					Timestamp: time.Now().UnixMilli(),
-					Local:     [2]float64{zone[0] + (rand.Float64() - 0.5), zone[1] + (rand.Float64() - 0.5)},
+					Local:     [2]float64{zone[0] + ((rand.Float64() - 0.5) * 0.05), zone[1] + ((rand.Float64() - 0.5) * 0.05)},
 				}
 
 				payload, _ := json.Marshal(event)

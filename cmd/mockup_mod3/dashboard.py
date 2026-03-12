@@ -69,7 +69,7 @@ def start_udp_listener():
                     "lat": event_data['local'][0],
                     "lon": event_data['local'][1],
                     "type": event_data['critical_event_type'], 
-                    "size": 1.5
+                    "size": event_data.get('cluster_size', 1) * 2
                 }
                 
                 new_event['color'] = EVENT_COLORS.get(new_event['type'], EVENT_COLORS["DEFAULT"])
