@@ -2,6 +2,7 @@ package workers
 
 import (
 	"cep-module5/internal/domain"
+	"cep-module5/internal/metrics"
 	"github.com/google/uuid"
 	"log"
 	"time"
@@ -33,6 +34,8 @@ func (w *CriticalDropWorker) Start(inChan <-chan domain.TelemetryEvent) {
 	for {
 		select {
 		case event := <-inChan:
+			startCycle := time.Now()
+
 			isRootCause, cluster := w.h3Map.AddEvent(event.Local[0], event.Local[1], event.EventType)
 
 			if isRootCause {
@@ -48,6 +51,10 @@ func (w *CriticalDropWorker) Start(inChan <-chan domain.TelemetryEvent) {
 					w.outputs.PushNotification(complexEvent)
 				}
 			}
+
+			cycleDuration := time.Since(startCycle).Seconds()
+
+			metrics.LatenciaProcessamentoJanela.WithLabelValues("CRITICAL_DROP").Observe(cycleDuration)
 
 		case <-windowTicker.C:
 			w.h3Map.ResetWindow()

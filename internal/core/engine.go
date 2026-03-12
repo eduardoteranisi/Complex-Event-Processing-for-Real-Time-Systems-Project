@@ -48,7 +48,7 @@ func (e *CEPEngine) Start() {
 	criticalDropWorker := workers.NewCriticalDropWorker(e.outputs, e.maxEntities)
 	go criticalDropWorker.Start(criticalDropChan)
 
-	overvoltageWorker := workers.NewUndervoltageWorker(e.outputs, e.maxEntities)
+	overvoltageWorker := workers.NewOvervoltageWorker(e.outputs, e.maxEntities)
 	go overvoltageWorker.Start(overvoltageChan)
 
 	undervoltageWorker := workers.NewUndervoltageWorker(e.outputs, e.maxEntities)
