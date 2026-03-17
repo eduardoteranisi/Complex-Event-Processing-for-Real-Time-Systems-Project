@@ -55,13 +55,7 @@ func main() {
 	maxEntities := uint64(350000)
 
 	// Estágios 3 e 4: Filas de Saída (Equivalente aos 32 MB particionados)
-	persistenceQueue := output.NewComplexEventRingBuffer("persistence", 50000)
-	notificationQueue := output.NewComplexEventRingBuffer("notification", 15000)
-
-	sedaQueues := &output.SEDAQueues{
-		Persistence:  persistenceQueue,
-		Notification: notificationQueue,
-	}
+	queues := output.NewSEDAQueues(50000, 15000)
 
 	log.Println("[SISTEMA] Memória estática alocada. Fazendo conexao com o banco Incident Log...")
 
@@ -88,7 +82,7 @@ func main() {
 	historico := recovery.RecoverRecentIncidents(umaHoraAtras)
 
 	for _, eventoPassado := range historico {
-		notificationQueue.Push(eventoPassado)
+		queues.PushNotification(eventoPassado)
 	}
 	// ==========================================
 	// 2. INICIALIZAÇÃO DOS 4 ESTÁGIOS (Goroutines)
@@ -103,14 +97,15 @@ func main() {
 	}()
 
 	// [Thread 3] DB Writer
-	dbWriter := output.NewDBWriter(persistenceQueue, db)
+	dbWriter := output.NewDBWriter(queues.Persistence, db)
 	go dbWriter.Start()
+	dbWriter.StartDLQConsumer()
 
 	// [Thread 4] UDP Broadcaster
-	broadcaster := output.NewUDPBroadcaster(notificationQueue, udpTarget)
+	broadcaster := output.NewUDPBroadcaster(queues.Notification, udpTarget)
 	go broadcaster.Start()
 
 	// CEP Core (O Cérebro)
-	engine := core.NewCEPEngine(ringBuffer, sedaQueues, receiver, maxEntities)
+	engine := core.NewCEPEngine(ringBuffer, queues, receiver, maxEntities)
 	engine.Start()
 }
