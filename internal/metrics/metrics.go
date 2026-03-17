@@ -6,22 +6,29 @@ import (
 )
 
 var (
-	// Métrica A: Vazão de Ingestão
+	// Métrica: Vazão de Ingestão
 	EventosRecebidosTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "cep_eventos_recebidos_total",
 		Help: "Número total de pacotes UDP recebidos na porta de ingestão",
 	})
 
-	// Métrica B: Saturação das Filas
+	// Métrica: Saturação das Filas
 	TamanhoFilas = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cep_filas_tamanho_atual",
 		Help: "Número de eventos aguardando processamento dentro das filas",
 	}, []string{"nome_fila"})
 
-	// Métrica C: Latência de Processamento
+	// Métrica: Latência de Processamento
 	LatenciaProcessamentoJanela = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cep_janela_processamento_segundos",
 		Help:    "Tempo de processamento pós-fechamento da janela",
 		Buckets: []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.1, 1, 30},
 	}, []string{"worker"})
+
+	// Métrica: Latência de Ingestão
+	LatenciaIngestao = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cep_latencia_ingestao_segundos",
+		Help:    "Tempo de trânsito da rede: do Simulador até o buffer do Motor Go",
+		Buckets: []float64{0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.50},
+	}, []string{"tipo_evento"})
 )

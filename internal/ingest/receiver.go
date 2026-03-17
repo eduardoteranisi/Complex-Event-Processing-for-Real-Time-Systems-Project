@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"sync/atomic"
+	"time"
 
 	"cep-module5/internal/domain"
 	"cep-module5/internal/metrics"
@@ -46,7 +47,7 @@ func (r *UDPReceiver) Start() error {
 		n, _, err := conn.ReadFromUDP(readBuffer)
 		if err != nil {
 			atomic.AddUint64(&r.packetsDrop, 1)
-			continue // Silent Drop: Ignora o erro de rede e avança
+			continue
 		}
 
 		atomic.AddUint64(&r.packetsRecv, 1)
@@ -56,12 +57,16 @@ func (r *UDPReceiver) Start() error {
 		err = json.Unmarshal(readBuffer[:n], &event)
 		if err != nil {
 			atomic.AddUint64(&r.packetsDrop, 1)
-			continue // Silent Drop: Pacote malformado, tipo incorreto ou corrompido
+			continue
 		}
+
+		tempoGeracao := time.UnixMilli(event.Timestamp)
+		tempoTransito := time.Since(tempoGeracao).Seconds()
+		metrics.LatenciaIngestao.WithLabelValues(event.EventType).Observe(tempoTransito)
 
 		success := r.ringBuffer.Push(event)
 		if !success {
-			atomic.AddUint64(&r.packetsDrop, 1) // Silent Drop: Buffer cheio (Overrun)
+			atomic.AddUint64(&r.packetsDrop, 1)
 		}
 	}
 }
