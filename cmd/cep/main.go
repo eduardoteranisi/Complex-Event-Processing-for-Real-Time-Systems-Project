@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +18,16 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
+	logFile, err := os.OpenFile("cep_engine.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal("Erro ao criar arquivo de log:", err)
+	}
+	defer logFile.Close()
+
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(multiWriter)
+
+	err = godotenv.Load()
 	if err != nil {
 		log.Println("Aviso: Arquivo .env não encontrado. Tentando ler do sistema...")
 	}
