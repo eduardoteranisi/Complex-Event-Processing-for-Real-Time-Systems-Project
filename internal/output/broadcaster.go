@@ -4,18 +4,22 @@ import (
 	"encoding/json"
 	"log"
 	"net"
-	"time"
+
+	"cep-module5/internal/domain"
+	"cep-module5/internal/metrics" // Adicionado para manter o painel de filas preciso
 )
 
 type UDPBroadcaster struct {
-	queue   *ComplexEventRingBuffer
-	address string
+	// Substituímos o RingBuffer pelo canal nativo
+	notificationChan chan domain.ComplexEvent
+	address          string
 }
 
-func NewUDPBroadcaster(queue *ComplexEventRingBuffer, address string) *UDPBroadcaster {
+// O construtor agora recebe o canal diretamente
+func NewUDPBroadcaster(notificationChan chan domain.ComplexEvent, address string) *UDPBroadcaster {
 	return &UDPBroadcaster{
-		queue:   queue,
-		address: address, // Ex: "255.255.255.255:8888" ou "127.0.0.1:8888" (para testes locais)
+		notificationChan: notificationChan,
+		address:          address,
 	}
 }
 
@@ -33,12 +37,11 @@ func (b *UDPBroadcaster) Start() {
 	}
 	defer conn.Close()
 
-	for {
-		event, ok := b.queue.Pop()
-		if !ok {
-			time.Sleep(1 * time.Millisecond) // Fila vazia, descansa a CPU
-			continue
-		}
+	// O 'range' consome a fila nativamente sem desperdiçar CPU
+	for event := range b.notificationChan {
+
+		// Decrementa a métrica do Grafana assim que o evento sai da fila
+		metrics.TamanhoFilas.WithLabelValues("notification").Dec()
 
 		// Serializa o Incidente de Causa Raiz
 		payload, err := json.Marshal(event)

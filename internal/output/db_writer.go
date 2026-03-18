@@ -5,19 +5,22 @@ import (
 	"log"
 	"time"
 
+	"cep-module5/internal/domain"
+	"cep-module5/internal/metrics"
 	_ "github.com/lib/pq"
 )
 
 type DBWriter struct {
-	queue *ComplexEventRingBuffer
-	db    *sql.DB
+	persistenceChan chan domain.ComplexEvent
+	dlqChan         chan domain.ComplexEvent
+	db              *sql.DB
 }
 
-// NewDBWriter agora inicializa a conexão com o RDBMS.
-func NewDBWriter(queue *ComplexEventRingBuffer, db *sql.DB) *DBWriter {
+func NewDBWriter(persistenceChan chan domain.ComplexEvent, db *sql.DB) *DBWriter {
 	return &DBWriter{
-		queue: queue,
-		db:    db,
+		persistenceChan: persistenceChan,
+		db:              db,
+		dlqChan:         make(chan domain.ComplexEvent, 10000),
 	}
 }
 
@@ -25,26 +28,24 @@ func (dbWriter *DBWriter) Start() {
 	log.Println("[DB Writer] Iniciando Thread de Persistência Assíncrona...")
 	defer dbWriter.db.Close()
 
-	// Preparamos o statement de Insert uma única vez para máxima performance
 	insertSQL := `
-		INSERT INTO incident_log (critical_event_id, critical_event_type, latitude, longitude, event_timestamp, cluster_size)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`
+        INSERT INTO incident_log (critical_event_id, critical_event_type, latitude, longitude, event_timestamp, cluster_size)
+        VALUES ($1, $2, $3, $4, $5, $6)
+    `
 	stmt, err := dbWriter.db.Prepare(insertSQL)
 	if err != nil {
 		log.Fatalf("[DB Writer] Erro ao preparar statement SQL: %v", err)
 	}
 	defer stmt.Close()
 
-	for {
-		event, ok := dbWriter.queue.Pop()
-		if !ok {
-			time.Sleep(1 * time.Millisecond) // Fila vazia
-			continue
-		}
+	for event := range dbWriter.persistenceChan {
 
-		// NOVO: Mecanismo de Retry Infinito para Falhas Transientes do Banco
-		for {
+		metrics.TamanhoFilas.WithLabelValues("persistence").Dec()
+
+		success := false
+
+		// Mecanismo de Retry para Falhas Transientes do Banco
+		for i := 0; i < 3; i++ {
 			_, err := stmt.Exec(
 				event.CriticalEventID,
 				event.CriticalEventType,
@@ -56,18 +57,62 @@ func (dbWriter *DBWriter) Start() {
 
 			if err == nil {
 				log.Printf("[DB Writer] 💾 Incidente gravado no PostgreSQL. ID: %s", event.CriticalEventID)
-				break // Sai do loop de retry e vai buscar o próximo evento na fila
+				success = true
+				break
 			}
 
-			// Se chegou aqui, o banco recusou a conexão ou deu erro.
 			log.Printf("[DB Writer] ⚠️ Banco fora do ar ou erro de Insert. Retentando em 2 segundos... Erro: %v", err)
-
-			// Pausa de 2 segundos (Backoff) para não causar um ataque DDoS no próprio banco
 			time.Sleep(2 * time.Second)
+		}
 
-			// Nota: Enquanto estamos travados neste Sleep, a arquitetura SEDA brilha.
-			// O Motor CEP não sabe que o banco caiu. Ele continua rodando a 15.000 req/s
-			// e jogando dados na nossa Fila de Persistência (Ring Buffer) de forma assíncrona.
+		// DEAD LETTER QUEUE
+		if !success {
+			log.Printf("🚨 ERRO CRÍTICO: Banco inacessível após 3 tentativas. Salvando em DLQ local.")
+			dbWriter.saveToDLQ(event)
 		}
 	}
+}
+
+func (dbWriter *DBWriter) saveToDLQ(event domain.ComplexEvent) {
+	select {
+	case dbWriter.dlqChan <- event:
+		metrics.TamanhoFilas.WithLabelValues("dlq").Inc()
+
+		log.Println("⚠️ [DB Writer] Evento enviado para a DLQ em memória para reprocessamento futuro.")
+	default:
+		log.Println("❌ FALHA CATASTRÓFICA: Fila da DLQ cheia! Evento descartado definitivamente.")
+	}
+}
+
+func (dbWriter *DBWriter) StartDLQConsumer() {
+	log.Println("[DLQ Consumer] Iniciando trabalhador de recuperação de eventos...")
+
+	insertSQL := `
+        INSERT INTO incident_log (critical_event_id, critical_event_type, latitude, longitude, event_timestamp, cluster_size)
+        VALUES ($1, $2, $3, $4, $5, $6)
+    `
+
+	go func() {
+		for event := range dbWriter.dlqChan {
+			metrics.TamanhoFilas.WithLabelValues("dlq").Dec()
+
+			time.Sleep(5 * time.Second)
+
+			_, err := dbWriter.db.Exec(insertSQL,
+				event.CriticalEventID,
+				event.CriticalEventType,
+				event.Local[0],
+				event.Local[1],
+				event.Timestamp,
+				event.ClusterSize,
+			)
+
+			if err != nil {
+				log.Printf("❌ [DLQ Consumer] Falha ao recuperar evento. Reenfileirando... Erro: %v", err)
+				dbWriter.saveToDLQ(event) // Volta para o final da fila em memória
+			} else {
+				log.Println("✅ [DLQ Consumer] Evento recuperado da DLQ e salvo no banco com sucesso!")
+			}
+		}
+	}()
 }
