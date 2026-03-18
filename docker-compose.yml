@@ -33,4 +33,24 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin # Senha padrão simples para testes
     depends_on:
       - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
     restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./cep_engine.log:/var/log/cep_engine.log
+      - ./monitoring/promtail.yaml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+volumes:
+  grafana_data:
