@@ -56,6 +56,8 @@ cep-module5/
 ├── docker-compose.yml           # Container orchestration
 ├── go.mod                       # Go module dependencies
 ├── go.sum                       # Go module checksums
+├── .env.example                 # Environment variables template
+├── .gitignore                   # Git ignored files (includes .env, binaries, venv)
 └── README.md                    # This file
 ```
 
