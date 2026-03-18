@@ -11,13 +11,11 @@ import (
 )
 
 type DBWriter struct {
-	// 1. Substituímos o RingBuffer customizado pelo Canal Nativo
 	persistenceChan chan domain.ComplexEvent
 	dlqChan         chan domain.ComplexEvent
 	db              *sql.DB
 }
 
-// 2. O construtor agora recebe o canal do Go
 func NewDBWriter(persistenceChan chan domain.ComplexEvent, db *sql.DB) *DBWriter {
 	return &DBWriter{
 		persistenceChan: persistenceChan,
@@ -40,11 +38,8 @@ func (dbWriter *DBWriter) Start() {
 	}
 	defer stmt.Close()
 
-	// 3. A MÁGICA DO GO: O 'range' consome a fila automaticamente.
-	// Adeus ao Pop() manual e ao time.Sleep() para filas vazias!
 	for event := range dbWriter.persistenceChan {
 
-		// Retirou da fila? Avisa o Prometheus para baixar a linha no Grafana
 		metrics.TamanhoFilas.WithLabelValues("persistence").Dec()
 
 		success := false
@@ -62,7 +57,7 @@ func (dbWriter *DBWriter) Start() {
 
 			if err == nil {
 				log.Printf("[DB Writer] 💾 Incidente gravado no PostgreSQL. ID: %s", event.CriticalEventID)
-				success = true // 4. A CORREÇÃO CRÍTICA: Avisa que deu certo!
+				success = true
 				break
 			}
 
